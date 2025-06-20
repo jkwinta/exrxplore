@@ -3,16 +3,23 @@ import xml.etree.ElementTree as ET
 from xml.dom.minidom import parse, parseString
 from html.parser import HTMLParser
 
+HEADER_TAGS = ['h{}'.format(i) for i in range(1, 7)]
 TABLE_TAGS = ['table', 'thead', 'tbody', 'tfoot', 'tr', 'td']
 
 class MyParser(HTMLParser):
 	def __init__(self):
 		HTMLParser.__init__(self)
+		# header stuff
+		self.header_context = []
+		self.write_header = False
+		self.header_buffer = None
+		self.headers = []
 		# table stuff
 		self.table_context = []
 		self.write_table = False
 		self.table_buffer = None
 		self.tables = []
+		self.table_headers = []
 		# p stuff
 		self.in_a_p = []
 		self.p_content_buffer = None
@@ -24,11 +31,17 @@ class MyParser(HTMLParser):
 		self.list_ps = []
 
 	def handle_starttag(self, tag, attrs):
+		# headers
+		if tag in HEADER_TAGS:
+			self.header_context.append(tag)
+			self.write_header = True
+			self.header_buffer = ''
 		# table
-		if (tag in TABLE_TAGS):
+		if tag in TABLE_TAGS:
 			self.table_context.append(tag)
 			if tag == 'table':  # table or tbody? 
 				self.tables.append([])
+				self.table_headers.append(self.headers[-1] if self.headers else None)
 			elif tag == 'tr':
 				self.tables[-1].append([])
 			elif tag == 'td':
@@ -48,8 +61,17 @@ class MyParser(HTMLParser):
 			self.list_buffer = ''
 
 	def handle_endtag(self, tag):
+		# header
+		if tag in HEADER_TAGS:
+			if self.header_context[-1] ==  tag:
+				self.header_context.pop()
+				if not self.header_context:
+					self.write_header = False
+					self.headers.append(self.header_buffer)
+			else:
+				raise RuntimeError('header-related uh oh')
 		# table
-		if (tag in TABLE_TAGS):
+		if tag in TABLE_TAGS:
 			if self.table_context[-1] == tag:
 				self.table_context.pop()
 			else:
@@ -68,6 +90,9 @@ class MyParser(HTMLParser):
 			self.lists[-1].append(self.list_buffer)
 
 	def handle_data(self, data):
+		# header
+		if self.write_header:
+			self.header_buffer += data
 		# table
 		if self.write_table:
 			self.table_buffer += data
@@ -79,18 +104,6 @@ class MyParser(HTMLParser):
 			self.list_buffer += data
 
 
-# https://docs.python.org/3/library/xml.etree.elementtree.html
-# tree = ET.parse('country_data.xml')
-# root = tree.getroot()
-# root = ET.fromstring(country_data_as_string)
-
-# https://docs.python.org/3/library/xml.dom.minidom.html
-# dom1 = parse('c:\\temp\\mydata.xml')  # parse an XML file by name
-# dom3 = parseString('<myxml>Some data<empty/> some more data</myxml>')
-
-# ElementTree
-# xml.dom.minidom
-
 file_name_rel = '~/websites/exrx-skeleton/exrx.net/WeightExercises/Brachioradialis/BBReverseCurl.html'
 test_file = pathlib.Path(file_name_rel).expanduser()
 
@@ -100,10 +113,11 @@ with open(test_file, encoding='utf-8') as f:
 parser = MyParser()
 parser.feed(file_contents)
 
-print(parser.tables)
+for i, t in enumerate(parser.tables):
+	print(parser.table_headers[i], t)
+
 for i, p in enumerate(parser.list_ps):
 	print(p, parser.lists[i])
-# for p in parser.p_content:
-# 	print(p)
 
+print(parser.headers)
 
